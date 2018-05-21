@@ -9,90 +9,140 @@ function Gas(N,temp){
   this.minY=absHeight*1/4;
   this.boxWidth = this.maxX-this.minX;
   this.boxHeigth = this.maxY-this.minY;
+  this.moleculeMass = 32;
+  this.moleculeRadius = 5;
   this.collisionEventsQueue = new PriorityQueue({ comparator: function(a, b) { return a.t - b.t; }});
 
   this.initialize = function(){
-    for(i=0;i<N;i++){
+    for(i=0;i<this.N;i++){
       // console.log("Here.")
-      var molecule = new Molecule(this.minX+this.boxWidth*random(),this.minY+this.boxHeigth*random(),5*random(),5*random(),32,18);//in the units of the program
-      this.molecules.push(molecule);
+      var xNew = this.minX+this.moleculeRadius+(this.boxWidth-2*this.moleculeRadius)*random();
+      var yNew = this.minY+this.moleculeRadius+(this.boxHeigth-2*this.moleculeRadius)*random();
+      while(this.areThereAnyCollisions(xNew, yNew, this.moleculeRadius)){
+        xNew = this.minX+this.moleculeRadius+(this.boxWidth-2*this.moleculeRadius)*random();
+        yNew = this.minY+this.moleculeRadius+(this.boxHeigth-2*this.moleculeRadius)*random();
+      }
+
+      var molecule = new Molecule(xNew,yNew,5*random(),5*random(),this.moleculeMass,this.moleculeRadius);//in the units of the program
+      this.molecules.push(molecule);       
     }
   }
-
+  this.areThereAnyCollisions = function(xI, yI, rI){//Position and radius of molecule i
+    //there are no collisions with walls right after initialization
+    var dX;
+    var dY;
+    if(this.molecules.length==0){
+      return false;
+    }else{
+      for(j=0;j<this.molecules.length;j++){
+        dX = xI-this.molecules[j].x;
+        dY = yI-this.molecules[j].y;
+        if(Math.sqrt(dX**2+dY**2)<rI+this.molecules[j].r){
+          return true;
+        }
+      }
+      return false;
+    }
+  }
+  
+  this.distance = function(i,j){//returns the distance between particles of indices i and j
+    var dX = this.molecules[i].x-this.molecules[j].x;
+    var dY = this.molecules[i].y-this.molecules[j].y;
+    return Math.sqrt(dX**2+dY**2);
+  }
   this.display = function(){
-    for(i=0;i<N;i++){
+    for(i=0;i<this.N;i++){
       this.molecules[i].display();
     }
-  }
-
-  this.updateVelocities = function(){
-    for(i=0;i<N;i++){
-      this.molecules[i].updateVelocity();
-    }
-  }
-  this.updatePositions = function(){
-    for(i=0;i<N;i++){
-      this.molecules[i].updatePosition();
-    }
-    // for(i=0;i<N;i++){
-    //   if(molecule1.x-molecule1.r<0){
-    //     molecule1.vX = -molecule1.vX;
-    //     molecule1.x = molecule1.r;  
-    //   }else if(molecule1.x+molecule1.r>absWidth){
-    //     molecule1.vX = -molecule1.vX;
-    //     molecule1.x = absWidth-molecule1.r;  
-    //   }
-    //   if(molecule1.y-molecule1.r<0){
-    //     molecule1.vY = -molecule1.vY;
-    //     molecule1.y = molecule1.r;  
-    //   }else if(molecule1.y+molecule1.r>absHeight){
-    //     molecule1.vY = -molecule1.vY;
-    //     molecule1.y = absHeight-molecule1.r;  
-    //   }
-    // }
     
   }
 
   this.calculateEvents =function(){
-    for(i=0;i<N;i++){
+    for(i=0;i<this.N;i++){
       var moleculei=this.molecules[i];
-      var tVertical = moleculei.collidesX(this.minX,this.maxX);
-      var tHorizontal = moleculei.collidesY(this.minY,this.maxY);
-      var collisionEvent;
-      //determine the lowest time of collision for this particle with the walls
-      if(tVertical<tHorizontal){
-        //collision with a vertical wall
-        collisionEvent = new EventPandW(tVertical+this.t,i,0,moleculei.collisionCount);//0 for vertical
-      }else{
-        //collision with a horizonta wall
-        collisionEvent = new EventPandW(tHorizontal+this.t,i,1,moleculei.collisionCount);//0 for vertical
+      var tCollision = moleculei.collidesX(this.minX,this.maxX)+this.t;//collision with vertical wall
+      var tProvisional=Infinity;
+      var nParticle2=-2;//indice of particle that will collide with molecule i. -1 and -2 are walls
+      var collisionCount2 =0;//collision count of particle 2 at the time of addition of the event
+      for(j=-1;j<this.N;j++){//Now all the other collisions are tested
+        if(j==-1){//collision with horizontal wall, -1 for horizontal
+          tProvisional = moleculei.collidesY(this.minY,this.maxY)+this.t;
+          if(tProvisional<tCollision){
+            tCollision = tProvisional;
+            nParticle2=j;
+            collisionCount2=0;
+          }
+        }else if(j>i){
+          tProvisional = moleculei.collides(this.molecules[j])+this.t;
+          if(tProvisional<tCollision){
+            tCollision = tProvisional;
+            nParticle2=j;
+            collisionCount2=this.molecules[j].collisionCount;
+          }
+        }      
       }
-
+      var collisionEvent = new CollisionEvent(tCollision,i,nParticle2,moleculei.collisionCount,collisionCount2);
       this.collisionEventsQueue.queue(collisionEvent);
     }
   }
 
   this.isAValidEvent = function(event){
-    return this.molecules[event.nParticle].collisionCount<=event.collisionCountP;
+    if(event.nParticleB!=-1 && event.nParticleB!=-2){
+      return (this.molecules[event.nParticleA].collisionCount<=event.collisionCountA)&&(this.molecules[event.nParticleB].collisionCount<=event.collisionCountB);
+    }else{
+      return this.molecules[event.nParticleA].collisionCount<=event.collisionCountA;
+    }    
   }
   this.advanceToNextCollision = function(){
+    // console.table(this.molecules);
+    // console.log(this.kineticEnergy());
     nextEvent = this.collisionEventsQueue.dequeue();
     while(!(this.isAValidEvent(nextEvent))){//While the event is not a valid one
       nextEvent=this.collisionEventsQueue.dequeue();
     }
+    // console.log(nextEvent.nParticleA,nextEvent.nParticleB);
+
     //update positions and time
-    for(i=0;i<N;i++){
+    for(i=0;i<this.N;i++){
       this.molecules[i].updatePosition(nextEvent.t-this.t);
     }
+    // console.log("After position update"+this.kineticEnergy());
     this.t = nextEvent.t;
     //update velocities and collision number
-    if(nextEvent.nWall==0){
-      this.molecules[nextEvent.nParticle].bounceX();
+    if(nextEvent.nParticleB==-2){//-2 for vertical wall
+      this.molecules[nextEvent.nParticleA].bounceX();
+      this.molecules[nextEvent.nParticleA].collisionCount++;
+    }else if(nextEvent.nParticleB==-1){//-1 for horizontal wall
+      this.molecules[nextEvent.nParticleA].bounceY();
+      this.molecules[nextEvent.nParticleA].collisionCount++;
     }else{
-      this.molecules[nextEvent.nParticle].bounceY();
+      var moleculeA = this.molecules[nextEvent.nParticleA];
+      var moleculeB = this.molecules[nextEvent.nParticleB];
+      var sigm = moleculeA.r+moleculeB.r;
+      var mu = 2*moleculeA.m*moleculeB.m/(moleculeA.m+moleculeB.m);
+      var j = mu*((moleculeB.x-moleculeA.x)*(moleculeB.vX-moleculeA.vX)+(moleculeB.y-moleculeA.y)*(moleculeB.vY-moleculeA.vY))/sigm;
+      
+      var jX= j*(moleculeB.x-moleculeA.x)/sigm;
+      var jY= j*(moleculeB.y-moleculeA.y)/sigm;
+
+      this.molecules[nextEvent.nParticleA].vX += jX/moleculeA.m;
+      this.molecules[nextEvent.nParticleA].vY += jY/moleculeA.m;
+      this.molecules[nextEvent.nParticleB].vX += -jX/moleculeB.m;
+      this.molecules[nextEvent.nParticleB].vY += -jY/moleculeB.m;
+
+      this.molecules[nextEvent.nParticleA].collisionCount++;
+      this.molecules[nextEvent.nParticleB].collisionCount++;
+      this.molecules[nextEvent.nParticleA].updateColor();
+      this.molecules[nextEvent.nParticleB].updateColor();
     }
-    this.molecules[nextEvent.nParticle].updateColor();
-    this.molecules[nextEvent.nParticle].collisionCount++;
+    // console.log("After velocity update"+this.kineticEnergy());
+  }
+  this.kineticEnergy = function(){
+    var k=0;
+    for(i=0;i<this.N;i++){
+      k+=this.molecules[i].m*(this.molecules[i].vX**2+this.molecules[i].vY**2)/2;
+    }
+    return k;
   }
 
 }
