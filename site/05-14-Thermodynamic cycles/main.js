@@ -11,7 +11,7 @@ function setup(){
   }
   console.log("Here");
   randomSeed(1);//get the same random numbers everytime 
-  oxygen2 = new Gas(200,300);
+  oxygen2 = new Gas(100,300);
   oxygen2.initialize();
   // noLoop();
   frameRate(60);
